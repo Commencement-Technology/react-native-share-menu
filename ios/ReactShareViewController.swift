@@ -13,7 +13,7 @@ class ReactShareViewController: ShareViewController, RCTBridgeDelegate, ReactSha
   func sourceURL(for bridge: RCTBridge!) -> URL! {
 #if DEBUG
     return RCTBundleURLProvider.sharedSettings()?
-      .jsBundleURL(forBundleRoot: "index.share")
+      .jsBundleURL(forBundleRoot: "index.share", fallbackResource: nil)
 #else
     return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
 #endif
@@ -55,6 +55,10 @@ class ReactShareViewController: ShareViewController, RCTBridgeDelegate, ReactSha
   }
 
   func loadExtensionContext() -> NSExtensionContext {
+    // Sleep for 300 ms
+    // Fix double-share iOS crash issue. Massive hack
+    let ms = 1000
+    usleep(useconds_t(300 * ms))
     return extensionContext!
   }
 
@@ -62,7 +66,7 @@ class ReactShareViewController: ShareViewController, RCTBridgeDelegate, ReactSha
     self.openHostApp()
   }
 
-  func continueInApp(with items: [NSExtensionItem], and extraData: [String:Any]?) {
-    handlePost(items, extraData: extraData)
+  func continueInApp(with item: NSExtensionItem, and extraData: [String:Any]?) {
+    handlePost(item, extraData: extraData)
   }
 }
