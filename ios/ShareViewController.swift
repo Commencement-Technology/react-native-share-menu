@@ -6,9 +6,7 @@
 //
 //  Created by Gustavo Parreira on 26/07/2020.
 //
-//  Modified by Veselin Stoyanov on 17/04/2021.
 
-import Foundation
 import MobileCoreServices
 import UIKit
 import Social
@@ -17,7 +15,6 @@ import RNShareMenu
 class ShareViewController: SLComposeServiceViewController {
   var hostAppId: String?
   var hostAppUrlScheme: String?
-  var sharedItems: [Any] = []
   
   override func viewDidLoad() {
     super.viewDidLoad()
@@ -42,12 +39,12 @@ class ShareViewController: SLComposeServiceViewController {
 
     override func didSelectPost() {
         // This is called after the user selects Post. Do the upload of contentText and/or NSExtensionContext attachments.
-      guard let items = extensionContext?.inputItems as? [NSExtensionItem] else {
+      guard let item = extensionContext?.inputItems.first as? NSExtensionItem else {
         cancelRequest()
         return
       }
 
-      handlePost(items)
+      handlePost(item)
     }
 
     override func configurationItems() -> [Any]! {
@@ -55,50 +52,24 @@ class ShareViewController: SLComposeServiceViewController {
         return []
     }
 
-  func handlePost(_ items: [NSExtensionItem], extraData: [String:Any]? = nil) {
-    DispatchQueue.global().async {
-      guard let hostAppId = self.hostAppId else {
-        self.exit(withError: NO_INFO_PLIST_INDENTIFIER_ERROR)
-        return
-      }
-      guard let userDefaults = UserDefaults(suiteName: "group.\(hostAppId)") else {
-        self.exit(withError: NO_APP_GROUP_ERROR)
-        return
-      }
+  func handlePost(_ item: NSExtensionItem, extraData: [String:Any]? = nil) {
+    guard let provider = item.attachments?.first else {
+      cancelRequest()
+      return
+    }
 
-      if let data = extraData {
-        self.storeExtraData(data)
-      } else {
-        self.removeExtraData()
-      }
+    if let data = extraData {
+      storeExtraData(data)
+    } else {
+      removeExtraData()
+    }
 
-      let semaphore = DispatchSemaphore(value: 0)
-      var results: [Any] = []
-
-      for item in items {
-        guard let attachments = item.attachments else {
-          self.cancelRequest()
-          return
-        }
-
-        for provider in attachments {
-          if provider.isText {
-            self.storeText(withProvider: provider, semaphore)
-          } else if provider.isURL {
-            self.storeUrl(withProvider: provider, semaphore)
-          } else {
-            self.storeFile(withProvider: provider, semaphore)
-          }
-
-          semaphore.wait()
-        }
-      }
-
-      userDefaults.set(self.sharedItems,
-                       forKey: USER_DEFAULTS_KEY)
-      userDefaults.synchronize()
-
-      self.openHostApp()
+    if provider.isText {
+      storeText(withProvider: provider)
+    } else if provider.isURL {
+      storeUrl(withProvider: provider)
+    } else {
+      storeFile(withProvider: provider)
     }
   }
 
@@ -128,7 +99,7 @@ class ShareViewController: SLComposeServiceViewController {
     userDefaults.synchronize()
   }
   
-  func storeText(withProvider provider: NSItemProvider, _ semaphore: DispatchSemaphore) {
+  func storeText(withProvider provider: NSItemProvider) {
     provider.loadItem(forTypeIdentifier: kUTTypeText as String, options: nil) { (data, error) in
       guard (error == nil) else {
         self.exit(withError: error.debugDescription)
@@ -138,13 +109,24 @@ class ShareViewController: SLComposeServiceViewController {
         self.exit(withError: COULD_NOT_FIND_STRING_ERROR)
         return
       }
+      guard let hostAppId = self.hostAppId else {
+        self.exit(withError: NO_INFO_PLIST_INDENTIFIER_ERROR)
+        return
+      }
+      guard let userDefaults = UserDefaults(suiteName: "group.\(hostAppId)") else {
+        self.exit(withError: NO_APP_GROUP_ERROR)
+        return
+      }
       
-      self.sharedItems.append([DATA_KEY: text, MIME_TYPE_KEY: "text/plain"])
-      semaphore.signal()
+      userDefaults.set([DATA_KEY: text, MIME_TYPE_KEY: "text/plain"],
+                       forKey: USER_DEFAULTS_KEY)
+      userDefaults.synchronize()
+      
+      self.openHostApp()
     }
   }
   
-  func storeUrl(withProvider provider: NSItemProvider, _ semaphore: DispatchSemaphore) {
+  func storeUrl(withProvider provider: NSItemProvider) {
     provider.loadItem(forTypeIdentifier: kUTTypeURL as String, options: nil) { (data, error) in
       guard (error == nil) else {
         self.exit(withError: error.debugDescription)
@@ -154,24 +136,65 @@ class ShareViewController: SLComposeServiceViewController {
         self.exit(withError: COULD_NOT_FIND_URL_ERROR)
         return
       }
+      guard let hostAppId = self.hostAppId else {
+        self.exit(withError: NO_INFO_PLIST_INDENTIFIER_ERROR)
+        return
+      }
+      guard let userDefaults = UserDefaults(suiteName: "group.\(hostAppId)") else {
+        self.exit(withError: NO_APP_GROUP_ERROR)
+        return
+      }
       
-      self.sharedItems.append([DATA_KEY: url.absoluteString, MIME_TYPE_KEY: "text/plain"])
-      semaphore.signal()
+      userDefaults.set([DATA_KEY: url.absoluteString, MIME_TYPE_KEY: "text/plain"],
+                       forKey: USER_DEFAULTS_KEY)
+      userDefaults.synchronize()
+      
+      self.openHostApp()
     }
   }
   
-  func storeFile(withProvider provider: NSItemProvider, _ semaphore: DispatchSemaphore) {
+  func storeFile(withProvider provider: NSItemProvider) {
+    print("Storing File");
+    print("Provider: \(provider)")
     provider.loadItem(forTypeIdentifier: kUTTypeData as String, options: nil) { (data, error) in
       guard (error == nil) else {
         self.exit(withError: error.debugDescription)
         return
       }
-      guard let url = data as? URL else {
-        self.exit(withError: COULD_NOT_FIND_IMG_ERROR)
-        return
+      var finalURL:URL! = nil;
+      let imgData: UIImage! = data as? UIImage;
+      if (imgData != nil) {
+          let imageData: Data! = imgData.pngData();
+
+          // Creating temporary URL for image data (UIImage)
+          guard let imageURL = NSURL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("TemporaryScreenshot.png") else {
+            print("Error getting image url file location to write to");
+            self.exit(withError: COULD_NOT_FIND_IMG_ERROR)
+            return;
+          }
+        do {
+          // Writing the image to the URL
+          try imageData.write(to: imageURL)
+          finalURL = imageURL;
+        } catch {
+          print("Error writing image data");
+          self.exit(withError: COULD_NOT_FIND_IMG_ERROR)
+        }
+      } else {
+        guard let url = data as? URL else {
+          print("Error turning data into url");
+          self.exit(withError: COULD_NOT_FIND_IMG_ERROR)
+          return
+        }
+        finalURL = url;
       }
+      
       guard let hostAppId = self.hostAppId else {
         self.exit(withError: NO_INFO_PLIST_INDENTIFIER_ERROR)
+        return
+      }
+      guard let userDefaults = UserDefaults(suiteName: "group.\(hostAppId)") else {
+        self.exit(withError: NO_APP_GROUP_ERROR)
         return
       }
       guard let groupFileManagerContainer = FileManager.default
@@ -181,19 +204,22 @@ class ShareViewController: SLComposeServiceViewController {
         return
       }
       
-      let mimeType = url.extractMimeType()
-      let fileExtension = url.pathExtension
+      let mimeType = finalURL.extractMimeType()
+      let fileExtension = finalURL.pathExtension
       let fileName = UUID().uuidString
       let filePath = groupFileManagerContainer
         .appendingPathComponent("\(fileName).\(fileExtension)")
       
-      guard self.moveFileToDisk(from: url, to: filePath) else {
+      guard self.moveFileToDisk(from: finalURL, to: filePath) else {
         self.exit(withError: COULD_NOT_SAVE_FILE_ERROR)
         return
       }
       
-      self.sharedItems.append([DATA_KEY: filePath.absoluteString, MIME_TYPE_KEY: mimeType])
-      semaphore.signal()
+      userDefaults.set([DATA_KEY: filePath.absoluteString,  MIME_TYPE_KEY: mimeType],
+                       forKey: USER_DEFAULTS_KEY)
+      userDefaults.synchronize()
+      
+      self.openHostApp()
     }
   }
 
