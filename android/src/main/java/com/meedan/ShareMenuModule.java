@@ -20,6 +20,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
+import java.time.ZonedDateTime;
 
 public class ShareMenuModule extends ReactContextBaseJavaModule implements ActivityEventListener {
 
@@ -29,6 +30,8 @@ public class ShareMenuModule extends ReactContextBaseJavaModule implements Activ
   // Keys
   final String MIME_TYPE_KEY = "mimeType";
   final String DATA_KEY = "data";
+  final String SHARED_TIME_KEY = "sharedTime";
+  final String STARTED_BY_INTENT_KEY = "startedByIntent";
 
   private ReactContext mReactContext;
 
@@ -46,7 +49,7 @@ public class ShareMenuModule extends ReactContextBaseJavaModule implements Activ
   }
 
   @Nullable
-  private ReadableMap extractShared(Intent intent)  {
+  private ReadableMap extractShared(Intent intent, String startedByIntent)  {
     String type = intent.getType();
 
     if (type == null) {
@@ -57,6 +60,9 @@ public class ShareMenuModule extends ReactContextBaseJavaModule implements Activ
 
     WritableMap data = Arguments.createMap();
     data.putString(MIME_TYPE_KEY, type);
+    long time = ZonedDateTime.now().toInstant().toEpochMilli();
+    data.putString(SHARED_TIME_KEY, Long.toString(time));
+    data.putString(STARTED_BY_INTENT_KEY, startedByIntent);
 
     if (Intent.ACTION_SEND.equals(action)) {
       if ("text/plain".equals(type)) {
@@ -87,18 +93,21 @@ public class ShareMenuModule extends ReactContextBaseJavaModule implements Activ
   @ReactMethod
   public void getSharedText(Callback successCallback) {
     Activity currentActivity = getCurrentActivity();
-
-    if (currentActivity == null) {
+    if (currentActivity == null ) {
+      successCallback.invoke(null);
       return;
     }
-
-    // If this isn't the root activity then make sure it is
+    int flags = currentActivity.getIntent().getFlags();
+    boolean wasLaunchedFromHistory = ((flags & currentActivity.getIntent().FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0);
+    if ( wasLaunchedFromHistory ) {
+      return;
+    }
     if (!currentActivity.isTaskRoot()) {
       Intent newIntent = new Intent(currentActivity.getIntent());
       newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
       currentActivity.startActivity(newIntent);
 
-      ReadableMap shared = extractShared(newIntent);
+      ReadableMap shared = extractShared(newIntent, "shared_text_not_task_root");
       successCallback.invoke(shared);
       clearSharedText();
       currentActivity.finish();
@@ -107,7 +116,7 @@ public class ShareMenuModule extends ReactContextBaseJavaModule implements Activ
 
     Intent intent = currentActivity.getIntent();
     
-    ReadableMap shared = extractShared(intent);
+    ReadableMap shared = extractShared(intent, "shared_intent_task_root");
     successCallback.invoke(shared);
     clearSharedText();
   }
@@ -157,10 +166,11 @@ public class ShareMenuModule extends ReactContextBaseJavaModule implements Activ
       return;
     }
 
-    ReadableMap shared = extractShared(intent);
+    ReadableMap shared = extractShared(intent, "on_new_intent");
     dispatchEvent(shared);
 
     // Update intent in case the user calls `getSharedText` again
-    currentActivity.setIntent(intent);
+    // Disabled because causes a double share for some reason on back press on android and a bunch of issues.
+    // currentActivity.setIntent(intent);
   }
 }
