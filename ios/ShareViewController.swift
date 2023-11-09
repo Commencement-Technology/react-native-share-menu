@@ -162,34 +162,64 @@ class ShareViewController: SLComposeServiceViewController {
   
   func storeFile(withProvider provider: NSItemProvider, _ semaphore: DispatchSemaphore) {
     provider.loadItem(forTypeIdentifier: kUTTypeData as String, options: nil) { (data, error) in
-      guard (error == nil) else {
-        self.exit(withError: error.debugDescription)
+      if let error = error {
+        print("Error loading item: \(error.localizedDescription)")  // Log any errors
+        self.exit(withError: error.localizedDescription)
         return
       }
-      guard let url = data as? URL else {
-        self.exit(withError: COULD_NOT_FIND_IMG_ERROR)
-        return
+
+      var url: URL? // Declare url variable outside the if-else block
+
+      if let image = data as? UIImage {
+          // Convert the UIImage to Data
+          guard let imageData = image.pngData() else { // Use image.jpegData(compressionQuality:) for JPEG
+              self.exit(withError: COULD_NOT_CONVERT_IMG_ERROR)
+              return
+          }
+
+          // Get the file path URL in the app's documents directory or temporary directory
+          guard let fileURL = self.createFileURL(forImageWithExtension: "png") else { // Use "jpeg" for JPEG
+              self.exit(withError: COULD_NOT_CREATE_FILE_URL_ERROR)
+              return
+          }
+
+          // Write the data to the file
+          do {
+              try imageData.write(to: fileURL)
+              url = fileURL // Assign the newly created file URL to url variable
+          } catch {
+              self.exit(withError: COULD_NOT_SAVE_FILE_ERROR)
+              return
+          }
+      } else if let providedURL = data as? URL {
+          url = providedURL // Assign the provided URL to url variable
+      } else {
+          self.exit(withError: COULD_NOT_FIND_IMG_ERROR)
+          return
       }
-      guard let hostAppId = self.hostAppId else {
-        self.exit(withError: NO_INFO_PLIST_INDENTIFIER_ERROR)
-        return
+
+      // Proceed with the rest of your code
+      guard let url = url, let hostAppId = self.hostAppId else {
+          self.exit(withError: NO_INFO_PLIST_INDENTIFIER_ERROR)
+          return
       }
+
       guard let groupFileManagerContainer = FileManager.default
               .containerURL(forSecurityApplicationGroupIdentifier: "group.\(hostAppId)")
       else {
-        self.exit(withError: NO_APP_GROUP_ERROR)
-        return
+          self.exit(withError: NO_APP_GROUP_ERROR)
+          return
       }
-      
-      let mimeType = url.extractMimeType()
+
+      // Here, use url directly as it is already in the correct scope
+      let mimeType = url.extractMimeType() // Ensure this method exists and works correctly
       let fileExtension = url.pathExtension
       let fileName = UUID().uuidString
-      let filePath = groupFileManagerContainer
-        .appendingPathComponent("\(fileName).\(fileExtension)")
-      
+      let filePath = groupFileManagerContainer.appendingPathComponent("\(fileName).\(fileExtension)")
+
       guard self.moveFileToDisk(from: url, to: filePath) else {
-        self.exit(withError: COULD_NOT_SAVE_FILE_ERROR)
-        return
+          self.exit(withError: COULD_NOT_SAVE_FILE_ERROR)
+          return
       }
       
       self.sharedItems.append([DATA_KEY: filePath.absoluteString, MIME_TYPE_KEY: mimeType])
@@ -243,6 +273,18 @@ class ShareViewController: SLComposeServiceViewController {
   
   func cancelRequest() {
     extensionContext!.cancelRequest(withError: NSError())
+  }
+  
+  private func createFileURL(forImageWithExtension fileExtension: String) -> URL? {
+      let fileManager = FileManager.default
+      let fileName = UUID().uuidString + ".\(fileExtension)"
+      
+      // You can replace 'documentDirectory' with 'cachesDirectory' or a custom app directory as needed
+      guard let directory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+          return nil
+      }
+      
+      return directory.appendingPathComponent(fileName)
   }
 
 }
