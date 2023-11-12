@@ -93,29 +93,43 @@ public class ShareMenuModule extends ReactContextBaseJavaModule implements Activ
   @ReactMethod
   public void getSharedText(Callback successCallback) {
     Activity currentActivity = getCurrentActivity();
-    if (currentActivity == null ) {
-      successCallback.invoke(null);
-      return;
-    }
-    int flags = currentActivity.getIntent().getFlags();
-    boolean wasLaunchedFromHistory = ((flags & currentActivity.getIntent().FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0);
-    if ( wasLaunchedFromHistory ) {
-      return;
-    }
-    if (!currentActivity.isTaskRoot()) {
-      Intent newIntent = new Intent(currentActivity.getIntent());
-      newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-      currentActivity.startActivity(newIntent);
-
-      ReadableMap shared = extractShared(newIntent, "shared_text_not_task_root");
-      successCallback.invoke(shared);
-      clearSharedText();
-      currentActivity.finish();
+    if (currentActivity == null) {
+      successCallback.invoke((Object) null);
       return;
     }
 
     Intent intent = currentActivity.getIntent();
-    
+
+    // Check if the activity was launched from history
+    int flags = intent.getFlags();
+    boolean wasLaunchedFromHistory = ((flags & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0);
+    if (wasLaunchedFromHistory) {
+      return;
+    }
+
+    // If the current activity is not the root of the task or if you want to reset the task anyway
+    if (!currentActivity.isTaskRoot()) {
+      // Specify the package name and class name explicitly
+      String packageName = "io.kichi.kichi"; // Replace with actual package name
+      String className = packageName + ".MainActivity"; // Replace with actual class name
+      Intent newIntent = new Intent();
+      newIntent.setClassName(packageName, className);
+      newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+
+      // Copy the data you need from the original intent to the new intent
+      newIntent.setAction(intent.getAction());
+      newIntent.setType(intent.getType());
+      newIntent.putExtras(intent.getExtras());
+
+      // Start the new task with the cleared stack
+      currentActivity.startActivity(newIntent);
+
+      // Optionally, finish the current activity
+      currentActivity.finish();
+      return;
+    }
+
+    // Handle the shared intent normally if it's already the root of the task
     ReadableMap shared = extractShared(intent, "shared_intent_task_root");
     successCallback.invoke(shared);
     clearSharedText();
@@ -169,8 +183,6 @@ public class ShareMenuModule extends ReactContextBaseJavaModule implements Activ
     ReadableMap shared = extractShared(intent, "on_new_intent");
     dispatchEvent(shared);
 
-    // Update intent in case the user calls `getSharedText` again
-    // Disabled because causes a double share for some reason on back press on android and a bunch of issues.
-    // currentActivity.setIntent(intent);
+     currentActivity.setIntent(intent);
   }
 }
