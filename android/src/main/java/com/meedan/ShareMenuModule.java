@@ -135,6 +135,16 @@ public class ShareMenuModule extends ReactContextBaseJavaModule implements Activ
     clearSharedText();
   }
 
+  @ReactMethod
+  public void addListener(String eventName) {
+    // Required for RN built in Event Emitter Calls.
+  }
+
+  @ReactMethod
+  public void removeListeners(Integer count) {
+    // Required for RN built in Event Emitter Calls.
+  }
+
   private void dispatchEvent(ReadableMap shared) {
     if (mReactContext == null || !mReactContext.hasActiveCatalystInstance()) {
       return;
